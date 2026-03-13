@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+python-dotenv
+openai-whisper
+torch
+dashscope
+moviepy
+python-multipart
+

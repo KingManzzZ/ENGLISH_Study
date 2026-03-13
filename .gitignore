@@ -1,0 +1,9 @@
+node_modules/
+backend/.env
+backend/data/
+models/
+.idea/
+.vscode/
+build/
+*.pyc
+
