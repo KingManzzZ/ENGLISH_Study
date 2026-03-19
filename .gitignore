@@ -1,28 +1,44 @@
 # Dependencies
 node_modules/
 backend/venv/
+.venv/
+env/
+venv/
 
 # Environment and sensitive data
 .env
 backend/.env
 frontend/.env
-backend/data/users.json
-backend/data/review_requests.json
+frontend/.env.local
+frontend/.env.*.local
+backend/data/*.json
+!backend/data/library/
 
 # Local storage and large files
-backend/data/
+backend/data/uploads/
+backend/data/subtitles/
+backend/data/thumbnails/
+backend/data/users/
 backend/models/
 models/
 
 # IDE files
 .idea/
 .vscode/
+*.swp
+*.swo
 
 # Build and logs
 build/
 dist/
+frontend/build/
 *.log
+backend/server.log
 nohup.out
+
+# OS files
+.DS_Store
+Thumbs.db
 
 # Python
 __pycache__/
