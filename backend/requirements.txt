@@ -6,4 +6,5 @@ torch
 dashscope
 moviepy
 python-multipart
-
+pyjwt
+passlib[bcrypt]

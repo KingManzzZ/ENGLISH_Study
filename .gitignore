@@ -1,9 +1,35 @@
+# Dependencies
 node_modules/
+backend/venv/
+
+# Environment and sensitive data
+.env
 backend/.env
+frontend/.env
+backend/data/users.json
+backend/data/review_requests.json
+
+# Local storage and large files
 backend/data/
+backend/models/
 models/
+
+# IDE files
 .idea/
 .vscode/
+
+# Build and logs
 build/
+dist/
+*.log
+nohup.out
+
+# Python
+__pycache__/
 *.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+htmlcov/
 
