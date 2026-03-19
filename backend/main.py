@@ -9,12 +9,10 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import shutil
-import uuid
 import subprocess
 import json
 import whisper
 import torch
-from moviepy import VideoFileClip
 import dashscope
 from http import HTTPStatus
 
@@ -164,12 +162,11 @@ app.mount("/videos/user_uploads", StaticFiles(directory=USERS_DATA_DIR), name="u
 # 加载 Whisper 模型
 # 修改：明确指定模型保存位置到项目根目录下的 models 文件夹
 # 使用绝对路径以确保万无一失
-ROOT_DIR = os.path.dirname(os.path.abspath(__file__)) # backend 目录
-PROJECT_ROOT = os.path.dirname(ROOT_DIR) # 项目根目录
-MODEL_ROOT = os.path.join(PROJECT_ROOT, "models")
+BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
+MODEL_ROOT = os.path.join(BACKEND_DIR, "models")
 os.makedirs(MODEL_ROOT, exist_ok=True)
 
-# 检查 GPU 是否可用
+# 检查 GPU 是否可用 (提前定义 device)
 env_device = os.getenv("WHISPER_DEVICE", "auto").lower()
 if env_device == "cuda":
     device = "cuda"
@@ -178,17 +175,28 @@ elif env_device == "cpu":
 else:
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-print("=" * 50)
-print(f"DEVICE STATUS: {device.upper()}")
-if device == "cuda":
-    print(f"GPU Name: {torch.cuda.get_device_name(0)}")
-    print(f"Memory Allocated: {torch.cuda.memory_allocated(0) / 1024**2:.2f} MB")
-else:
-    print("Running on CPU mode. Transcription will be slower.")
-print("=" * 50)
+# 全局模型变量，将在启动时加载
+model = None
 
-print(f"Loading Whisper model to: {MODEL_ROOT}")
-model = whisper.load_model("medium", download_root=MODEL_ROOT, device=device)
+@app.on_event("startup")
+async def startup_event():
+    global model
+    print("=" * 50)
+    print(f"DEVICE STATUS: {device.upper()}")
+    if device == "cuda":
+        print(f"GPU Name: {torch.cuda.get_device_name(0)}")
+        print(f"Memory Allocated: {torch.cuda.memory_allocated(0) / 1024**2:.2f} MB")
+    else:
+        print("Running on CPU mode. Transcription will be slower.")
+    print("=" * 50)
+
+    print(f"Loading Whisper model to: {MODEL_ROOT}")
+    try:
+        # 加上 download_root 确保它去你指定的文件夹找
+        model = whisper.load_model("medium", device=device, download_root=MODEL_ROOT)
+        print("Whisper model loaded successfully!")
+    except Exception as e:
+        print(f"Error loading Whisper model: {e}")
 
 # 设置阿里云百炼 API KEY
 dashscope.api_key = os.getenv("DASHSCOPE_API_KEY")

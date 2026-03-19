@@ -226,20 +226,117 @@ async def request_review(file_id: str, username: str = Depends(get_current_user)
     save_json(REVIEW_REQUESTS_FILE, requests)
     return {"message": "Submitted"}
 
+@router.post("/lookup/ai_context")
+async def lookup_word_ai_context(data: dict):
+    word = data.get("word", "").strip().strip('.,!?()[]"')
+    context = data.get("context", "")
+    prev_context = data.get("prev_context", "")
+    next_context = data.get("next_context", "")
+
+    if not word:
+        raise HTTPException(status_code=400, detail="Word is required")
+
+    import os
+    from openai import OpenAI
+
+    try:
+        api_key = os.getenv("DASHSCOPE_API_KEY")
+        if not api_key:
+            raise HTTPException(status_code=500, detail="AI API key not configured")
+
+        client = OpenAI(
+            api_key=api_key,
+            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+        )
+
+        full_context = f"{prev_context}\n{context}\n{next_context}".strip()
+
+        prompt = (
+            f"单词: {word}\n"
+            f"所在句子: {context}\n"
+            f"上下句背景: \n{full_context}\n\n"
+            f"任务：结合上述具体语境，直接给出该单词在‘此处’的唯一意思。禁止列举多个序号，禁止输出词典项，禁止输出免责声明。\n"
+            f"输出格式（严格执行）：\n"
+            f"该单词在原句中的意思应该是：[这里直接写出该单词在当前语境下的具体含义、中文翻译以及在句子中扮演的角色，确保回答合乎逻辑且简洁专业]\n"
+            f"注意：不要输出任何前言、后记或多余说明。直接从‘该单词在原句中的意思应该是：’开始。"
+        )
+
+        completion = client.chat.completions.create(
+            model="qwen-plus",
+            messages=[
+                {"role": "system", "content": "你是一个专业的英语老师，擅长结合语境解释词义。"},
+                {"role": "user", "content": prompt}
+            ]
+        )
+
+        return {"status": "success", "explanation": completion.choices[0].message.content}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.post("/lookup")
 async def lookup_word(data: dict):
     word = data.get("word", "").strip().strip('.,!?()[]"')
+    context = data.get("context", "")
     if not word:
         raise HTTPException(status_code=400, detail="Word is required")
+
     import requests
+    import os
+    from openai import OpenAI
+
+    # Get dictionary data
+    dict_data = None
     try:
         r = requests.get(f"https://api.dictionaryapi.dev/api/v2/entries/en/{word}", timeout=5)
         if r.status_code == 200:
-            res = r.json()[0]
-            phonetic = res.get("phonetic") or (res.get("phonetics") or [{}])[0].get("text", "n/a")
-            meaning = res.get("meanings", [{}])[0]
-            pos = meaning.get("partOfSpeech", "n/a")
-            defn = meaning.get("definitions", [{}])[0].get("definition", "No definition")
-            return {"word": word, "phonetic": phonetic, "translation": defn, "pos": pos}
-    except: pass
-    return {"word": word, "phonetic": "n/a", "translation": "Not found", "pos": "n/a"}
+            dict_data = r.json()
+    except:
+        pass
+
+    # Use LLM (Aliyun Bailian) to translate definitions and examples
+    # This is a fallback/enhancement to provide Chinese translations
+    try:
+        api_key = os.getenv("DASHSCOPE_API_KEY")
+        if api_key and dict_data:
+            client = OpenAI(
+                api_key=api_key,
+                base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+            )
+
+            # Prepare a simplified version of dict_data for translation to save tokens
+            simplified_data = []
+            for entry in dict_data:
+                meanings = []
+                for m in entry.get("meanings", []):
+                    defs = []
+                    for d in m.get("definitions", []): # Removed [:2] limit to translate all definitions
+                        defs.append({"def": d.get("definition"), "ex": d.get("example")})
+                    meanings.append({"pos": m.get("partOfSpeech"), "defs": defs})
+                simplified_data.append({"word": entry.get("word"), "meanings": meanings})
+
+            prompt = f"Translate the following English dictionary definitions and examples into Chinese. Return ONLY a JSON object mapping the English text to its Chinese translation. Word: {word}. Context: {context}\nData: {json.dumps(simplified_data)}"
+
+            completion = client.chat.completions.create(
+                model="qwen-plus",
+                messages=[
+                    {"role": "system", "content": "You are a helpful translation assistant. Return only JSON mapping English strings to Chinese strings."},
+                    {"role": "user", "content": prompt}
+                ],
+                response_format={"type": "json_object"}
+            )
+            translations = json.loads(completion.choices[0].message.content)
+
+            # Inject translations back into dict_data
+            for entry in dict_data:
+                for m in entry.get("meanings", []):
+                    for d in m.get("definitions", []):
+                        d["translation"] = translations.get(d.get("definition"), "")
+                        if d.get("example"):
+                            d["example_translation"] = translations.get(d.get("example"), "")
+    except Exception as e:
+        print(f"Translation error: {e}")
+
+    if dict_data:
+        return {"status": "success", "data": dict_data}
+    else:
+        return {"status": "error", "message": "Word not found", "data": None}

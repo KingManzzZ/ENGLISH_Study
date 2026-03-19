@@ -57,6 +57,8 @@ function App() {
     const [currentTime, setCurrentTime] = useState(0);
   const [lookupWord, setLookupWord] = useState<any>(null); // 新增：正在查看的单词详情
   const [isLookingUp, setIsLookingUp] = useState(false); // 新增：查词加载中状态
+  const [aiExplanation, setAiExplanation] = useState<string | null>(null); // 新增：AI语境解释
+  const [isAiLoading, setIsAiLoading] = useState(false); // 新增：AI解释加载状态
 
   const videoRef = useRef<HTMLVideoElement>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
@@ -480,35 +482,92 @@ function App() {
     }
   };
 
-  const handleWordClick = async (word: string, context: string) => {
+  const handleWordClick = async (word: string, context: string, index: number) => {
     // 清理单词
     const cleanWord = word.replace(/[.,!?()\[\]"']/g, "");
     if (!cleanWord || cleanWord.length < 2) return;
 
+    // 立即重置相关状态，防止上一个单词的数据残留
     setIsLookingUp(true);
-    setLookupWord({ word: cleanWord }); // 先显示正在查询的单词名
+    setAiExplanation(null);
+    setIsAiLoading(false);
+
+    // 每个请求分配一个唯一的标识符，用于竞态控制
+    const currentRequestId = Date.now().toString();
+    (window as any).lastWordRequestId = currentRequestId;
+
+    setLookupWord({
+      word: cleanWord,
+      data: null,
+      context: context,
+      prev_context: index > 0 ? subtitles[index - 1].text : "",
+      next_context: index < subtitles.length - 1 ? subtitles[index + 1].text : ""
+    });
 
     try {
       const res = await axios.post(`${API_BASE_URL}/lookup`, {
         word: cleanWord,
         context: context
       });
-      setLookupWord(res.data);
+
+      // 检查当前请求是否仍是最新请求，如果不是则丢弃结果
+      if ((window as any).lastWordRequestId !== currentRequestId) return;
+
+      if (res.data.status === 'success') {
+        setLookupWord((prev: any) => (prev && prev.word === cleanWord) ? { ...prev, data: res.data.data } : prev);
+      } else {
+        setLookupWord((prev: any) => (prev && prev.word === cleanWord) ? { ...prev, data: null, error: res.data.message } : prev);
+      }
     } catch (err) {
+      if ((window as any).lastWordRequestId !== currentRequestId) return;
       console.error("Word lookup failed", err);
-      setLookupWord({
-        word: cleanWord,
-        phonetic: "n/a",
-        translation: "Failed to look up",
-        pos: "n/a"
-      });
+      setLookupWord((prev: any) => (prev && prev.word === cleanWord) ? { ...prev, data: null, error: "Lookup failed" } : prev);
     } finally {
-      setIsLookingUp(false);
+      if ((window as any).lastWordRequestId === currentRequestId) {
+        setIsLookingUp(false);
+      }
+    }
+  };
+
+  const handleAiContextLookup = async () => {
+    if (!lookupWord || !lookupWord.word) return;
+
+    // 如果已经有针对当前单词的 AI 解释，且没有正在加载，则直接返回，不再请求
+    if (aiExplanation && !isAiLoading) return;
+
+    setIsAiLoading(true);
+    setAiExplanation(null); // 清除旧的AI解释
+
+    const currentWord = lookupWord.word;
+    const currentRequestId = Date.now().toString();
+    (window as any).lastAiRequestId = currentRequestId;
+
+    try {
+      const res = await axios.post(`${API_BASE_URL}/lookup/ai_context`, {
+        word: lookupWord.word,
+        context: lookupWord.context,
+        prev_context: lookupWord.prev_context,
+        next_context: lookupWord.next_context
+      });
+
+      if ((window as any).lastAiRequestId !== currentRequestId) return;
+
+      if (res.data.status === 'success') {
+        setAiExplanation(res.data.explanation);
+      }
+    } catch (err) {
+      if ((window as any).lastAiRequestId !== currentRequestId) return;
+      console.error("AI Context lookup failed", err);
+      setAiExplanation("AI Analysis failed. Please try again.");
+    } finally {
+      if ((window as any).lastAiRequestId === currentRequestId) {
+        setIsAiLoading(false);
+      }
     }
   };
 
   return (
-    <div className="flex flex-col h-screen bg-white text-black font-sans">
+    <div className="flex flex-col h-screen bg-white text-black font-sans relative overflow-hidden">
       {/* Header */}
       <header className="p-4 border-b border-gray-200 flex justify-between items-center bg-white shadow-sm z-10">
         <h1 className="text-xl font-bold tracking-tight text-black flex items-center gap-2">
@@ -623,60 +682,9 @@ function App() {
         </div>
       )}
 
-      {/* Word Lookup Modal */}
-      {lookupWord && (
-        <div
-          className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/20 backdrop-blur-sm animate-in fade-in duration-200"
-          onClick={() => setLookupWord(null)}
-        >
-          <div
-            className="w-full max-w-xs bg-white rounded-2xl shadow-2xl border border-gray-100 p-6 animate-in zoom-in-95 duration-200"
-            onClick={e => e.stopPropagation()}
-          >
-            <div className="flex justify-between items-start mb-4">
-              <div>
-                <h3 className="text-2xl font-black tracking-tight text-black">{lookupWord.word}</h3>
-                <p className="text-sm font-mono text-blue-600 font-bold mt-1">
-                  {isLookingUp ? "Consulting AI..." : lookupWord.phonetic}
-                </p>
-              </div>
-              <button
-                onClick={() => setLookupWord(null)}
-                className="p-1 hover:bg-gray-100 rounded-full transition-colors"
-              >
-                <EyeOff size={18} className="text-gray-400" />
-              </button>
-            </div>
 
-            {!isLookingUp ? (
-              <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-300">
-                <div className="p-3 bg-gray-50 rounded-xl">
-                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1">Part of Speech</span>
-                  <span className="text-xs font-bold text-black italic">{lookupWord.pos}</span>
-                </div>
-                <div className="p-3 bg-gray-900 text-white rounded-xl shadow-lg shadow-black/10">
-                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-1">Definition</span>
-                  <span className="text-sm font-bold">{lookupWord.translation}</span>
-                </div>
-              </div>
-            ) : (
-              <div className="py-10 flex flex-col items-center justify-center space-y-3">
-                <div className="w-8 h-8 border-2 border-gray-100 border-t-black rounded-full animate-spin"></div>
-                <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest animate-pulse">Deep Analyzing...</p>
-              </div>
-            )}
-
-            <button
-              onClick={() => setLookupWord(null)}
-              className="w-full mt-6 py-3 bg-gray-100 hover:bg-gray-200 text-black rounded-xl font-bold text-[10px] uppercase tracking-[0.2em] transition-all"
-            >
-              Close
-            </button>
-          </div>
-        </div>
-      )}
-
-      <main className="flex flex-1 overflow-hidden relative">
+      {/* Main Content Area */}
+      <main className="flex-1 flex overflow-hidden relative">
         {/* Library Overlay */}
         {showLibrary && (
           <div className="absolute inset-0 bg-black/40 z-50 flex justify-end">
@@ -877,7 +885,7 @@ function App() {
         </div>
 
         {/* Right: Subtitle Sidebar */}
-        <div className="flex-1 border-l border-gray-100 flex flex-col bg-white">
+        <div className="flex-1 border-l border-gray-100 flex flex-col bg-white z-0">
           <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
             <h2 className="font-bold text-xs uppercase tracking-widest flex items-center gap-2 text-black">
               <Languages size={14} /> Transcript
@@ -934,7 +942,7 @@ function App() {
                             className="hover:underline hover:text-blue-500 transition-colors"
                             onClick={(e) => {
                               e.stopPropagation();
-                              handleWordClick(word, sub.text);
+                              handleWordClick(word, sub.text, index);
                             }}
                           >
                             {word}
@@ -958,6 +966,114 @@ function App() {
             )}
           </div>
         </div>
+
+        {/* Dictionary Sidebar (New) */}
+        {lookupWord && (
+          <div className="w-[400px] border-l border-gray-200 bg-gray-50 flex flex-col animate-in slide-in-from-right duration-300 shadow-2xl z-20">
+            <div className="p-5 border-b border-gray-200 bg-white space-y-3">
+              <div className="flex justify-between items-center">
+                <h2 className="font-black text-xl tracking-tight uppercase">Dictionary</h2>
+                <button
+                  onClick={() => setLookupWord(null)}
+                  className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+                >
+                  <div className="text-2xl font-light text-gray-400 leading-none">×</div>
+                </button>
+              </div>
+              <button
+                onClick={handleAiContextLookup}
+                disabled={isAiLoading}
+                className="w-full text-left p-2 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all border border-blue-100 flex items-center justify-center gap-2"
+              >
+                {isAiLoading ? (
+                  <div className="w-3 h-3 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                ) : <Settings size={12} />}
+                {isAiLoading ? 'Analyzing Context...' : '还是不理解该单词在原句中的意思？点击使用AI帮助'}
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-8 space-y-8 custom-scrollbar">
+              {/* AI Explanation Area */}
+              {aiExplanation && (
+                <div className="p-5 bg-blue-600 text-white rounded-2xl shadow-xl animate-in fade-in slide-in-from-top-4 duration-500 space-y-3">
+                  <div className="flex items-center gap-2 border-b border-white/20 pb-2">
+                    <Settings size={14} />
+                    <span className="text-[10px] font-black uppercase tracking-widest">Contextual AI Analysis</span>
+                  </div>
+                  <p className="text-sm leading-relaxed whitespace-pre-wrap font-medium">
+                    {aiExplanation}
+                  </p>
+                </div>
+              )}
+
+              {isLookingUp ? (
+                <div className="flex flex-col items-center justify-center h-full space-y-4">
+                  <div className="w-10 h-10 border-2 border-black border-t-transparent rounded-full animate-spin"></div>
+                  <p className="text-xs font-bold uppercase tracking-widest text-gray-400">Searching "{lookupWord.word}"...</p>
+                </div>
+              ) : lookupWord.data ? (
+                lookupWord.data.map((entry: any, eIdx: number) => (
+                  <div key={eIdx} className="space-y-6 pb-8 border-b border-gray-200 last:border-0">
+                    <div>
+                      <h3 className="text-3xl font-black text-black">{entry.word}</h3>
+                      <p className="text-blue-600 font-mono text-lg mt-2">{entry.phonetic || "暂无音标"}</p>
+                    </div>
+
+                    {entry.meanings && entry.meanings.length > 0 ? entry.meanings.map((meaning: any, mIdx: number) => (
+                      <div key={mIdx} className="space-y-4">
+                        <span className="inline-block px-3 py-1 bg-black text-white text-xs font-black italic rounded">
+                          {meaning.partOfSpeech || "n/a"}
+                        </span>
+                        <ul className="space-y-6">
+                          {meaning.definitions.map((def: any, dIdx: number) => (
+                            <li key={dIdx} className="text-base border-l-4 border-gray-200 pl-4 py-2 space-y-2">
+                              {/* 英文解释 */}
+                              <div className="flex gap-2">
+                                <span className="font-black text-gray-300 shrink-0">DEF.</span>
+                                <p className="text-gray-900 leading-relaxed font-medium">{def.definition || "暂无定义"}</p>
+                              </div>
+
+                              {/* 中文解释 (由后端通过百炼翻译注入) */}
+                              {def.translation && (
+                                <div className="flex gap-2">
+                                  <span className="font-black text-blue-200 shrink-0">意义.</span>
+                                  <p className="text-blue-700 leading-relaxed">{def.translation}</p>
+                                </div>
+                              )}
+
+                              {/* 例句 */}
+                              {def.example && (
+                                <div className="mt-3 p-3 bg-white rounded-lg border border-gray-100 shadow-sm space-y-2">
+                                  <div className="flex gap-2">
+                                    <span className="font-black text-gray-300 shrink-0 text-sm">e.g.</span>
+                                    <p className="text-gray-500 text-sm italic">"{def.example}"</p>
+                                  </div>
+                                  {def.example_translation && (
+                                    <div className="flex gap-2">
+                                      <span className="font-black text-blue-200 shrink-0 text-sm">例.</span>
+                                      <p className="text-blue-500 text-sm">{def.example_translation}</p>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )) : <p className="text-base text-gray-400">暂无释义资料</p>}
+                  </div>
+                ))
+              ) : (
+                <div className="flex flex-col items-center justify-center h-full text-center space-y-3">
+                  <p className="text-4xl font-black opacity-10">404</p>
+                  <p className="text-sm font-bold text-gray-400 uppercase tracking-widest">
+                    {lookupWord.error || "Word Not Found"}
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </main>
       <style>{`
         @keyframes progress {
