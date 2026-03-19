@@ -19,6 +19,8 @@ backend/data/uploads/
 backend/data/subtitles/
 backend/data/thumbnails/
 backend/data/users/
+backend/data/library/*
+!backend/data/library/.gitkeep
 backend/models/
 models/
 
