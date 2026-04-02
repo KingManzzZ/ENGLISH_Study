@@ -8,3 +8,5 @@ moviepy
 python-multipart
 pyjwt
 passlib[bcrypt]
+requests
+openai

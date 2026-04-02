@@ -7,47 +7,53 @@ venv/
 
 # Environment and sensitive data
 .env
+.env.*
+!.env.example
 backend/.env
 frontend/.env
 frontend/.env.local
 frontend/.env.*.local
-backend/data/*.json
-!backend/data/library/
+*.local
 
-# Local storage and large files
+# Generated backend data (keep structure only)
 backend/data/uploads/
 backend/data/subtitles/
 backend/data/thumbnails/
 backend/data/users/
 backend/data/library/*
 !backend/data/library/.gitkeep
+
+# Optional runtime JSON state (already tracked files will remain tracked)
+backend/data/*.json
+
+# Large models/artifacts
 backend/models/
 models/
 
-# IDE files
+# Build output and caches
+build/
+dist/
+frontend/build/
+.coverage
+htmlcov/
+.pytest_cache/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Logs
+*.log
+backend/server.log
+nohup.out
+update_log/*.txt
+
+# IDE/editor
 .idea/
 .vscode/
 *.swp
 *.swo
 
-# Build and logs
-build/
-dist/
-frontend/build/
-*.log
-backend/server.log
-nohup.out
-
-# OS files
+# OS
 .DS_Store
 Thumbs.db
-
-# Python
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.pytest_cache/
-.coverage
-htmlcov/
-

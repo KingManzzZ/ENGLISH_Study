@@ -1,0 +1,24 @@
+时间：2026-04-02 16:45:00
+
+本次工作总结：去除紫色/粉色主题，改为清爽蓝青色系
+
+改动文件：
+- frontend/src/pages/ListeningPage.tsx
+- frontend/src/pages/LearningHub.tsx
+- frontend/src/pages/ReadingListPage.tsx
+
+主要调整：
+1. 全局背景从紫粉渐变改为蓝青绿渐变
+   - from-sky-50 via-cyan-50 to-emerald-50
+2. 听力页按钮与高亮从 indigo/purple 改为 blue/cyan
+3. 听力页侧边栏边框与面板底色去紫化（sky/cyan）
+4. 字典侧栏 AI 区域从紫蓝渐变改为蓝青渐变
+5. 学习首页和阅读页头部边框、图标强调色统一为 blue/sky
+
+验证：
+- 前端 TypeScript 错误检查：通过
+- 前端构建：Compiled successfully
+
+说明：
+- 目前主题已去掉紫色和粉色，保留青春感但更清爽。
+

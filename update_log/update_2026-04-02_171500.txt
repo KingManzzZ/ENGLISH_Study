@@ -1,0 +1,53 @@
+时间：2026-04-02 17:15:00
+
+本次工作：新增统一翻译接口（Baidu）并接管非字幕窗口 AI 协助之外的翻译流程。
+
+变更文件：
+1) backend/app/services/translation_service.py
+2) backend/app/services/video_service.py
+3) backend/app/api/routes.py
+4) backend/requirements.txt
+5) frontend/src/pages/ListeningPage.tsx
+
+核心实现：
+- 新增 `translation_service.py`：
+  - 对接百度翻译 API。
+  - 单批次限制：最多 50 句、最多 6000 字符。
+  - 服务内置节流：最小请求间隔 0.11s（满足 <=10 req/s）。
+  - 失败统一返回：`emmm，这句翻译好像出问题了，点击尝试ai协助翻译`。
+
+- 视频字幕翻译改造（video_service.py）：
+  - 从逐句 Qwen 改为批量 Baidu 翻译。
+  - 每条字幕写入 `translation_status`/`translation_source`。
+  - 翻译失败时写入失败文案，前端可触发 AI 协助修复。
+
+- 后端新增/改造接口（routes.py）：
+  - 新增 `POST /translate/batch`（统一翻译接口）：
+    - 入参 `texts`、`from`、`to`。
+    - 校验单次不超过 50 句、6000 字符。
+  - 新增 `POST /subtitles/{file_id}/ai_repair`：
+    - 点击后用 Qwen 修复该句翻译并写回字幕 JSON。
+  - 新增 `POST /lookup/ai_translate_text`：
+    - 用于字典例句 AI 修复翻译。
+  - `POST /lookup` 改为使用 Baidu 批量翻译释义/例句。
+
+- AI 协助点击频率限制：
+  - 在后端做内存限流：30 秒最多 6 次（按用户+动作维度）。
+  - 超限返回 429，并提示 `点击过于频繁，请X秒后再试`。
+
+- 前端文案对齐：
+  - 失败字幕按钮文案改为：
+    `emmm，这句翻译好像出问题了，点击尝试ai协助翻译`
+
+依赖更新：
+- backend/requirements.txt 新增：
+  - requests
+  - openai
+
+验证结果：
+- `python -m compileall app` 通过。
+- `npm run build` 通过（Compiled successfully）。
+
+说明：
+- 本次为后端统一翻译链路改造，字幕窗口 AI 协助保留为“失败后手动修复”路径。
+- 若需更严格的频控（例如分 IP、持久化窗口、全局配额）建议后续接入 Redis 限流。
