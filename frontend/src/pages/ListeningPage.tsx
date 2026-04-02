@@ -53,12 +53,12 @@ function ListeningPage({ username, isAdmin, onLogout }: ListeningPageProps) {
   const [isLookingUp, setIsLookingUp] = useState(false); // 新增：查词加载中状态
   const [aiExplanation, setAiExplanation] = useState<string | null>(null); // 新增：AI语境解释
   const [isAiLoading, setIsAiLoading] = useState(false); // 新增：AI解释加载状态
-  const [showAiModal, setShowAiModal] = useState(false);
   const [repairingSubtitleIndex, setRepairingSubtitleIndex] = useState<number | null>(null);
   const [repairingExampleKey, setRepairingExampleKey] = useState<string | null>(null);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const dictionaryScrollRef = useRef<HTMLDivElement>(null);
   const pollIntervalRef = useRef<any>(null);
   const [followTranscript, setFollowTranscript] = useState(true);
   const ignoreTranscriptScrollRef = useRef(false);
@@ -92,6 +92,11 @@ function ListeningPage({ username, isAdmin, onLogout }: ListeningPageProps) {
     lastTranscriptActiveIndexRef.current = -1;
     setFollowTranscript(true);
   }, [fileId]);
+
+  useEffect(() => {
+    if (!aiExplanation || !dictionaryScrollRef.current) return;
+    dictionaryScrollRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [aiExplanation]);
 
   const handleUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -293,6 +298,10 @@ function ListeningPage({ username, isAdmin, onLogout }: ListeningPageProps) {
     scrollTranscriptToActive(activeIndex);
   };
 
+  const handleCloseAiExplanation = () => {
+    setAiExplanation(null);
+  };
+
   const handleWordClick = async (word: string, context: string, index: number) => {
     // 清理单词
     const cleanWord = word.replace(/[.,!?()[\]"']/g, "");
@@ -300,7 +309,7 @@ function ListeningPage({ username, isAdmin, onLogout }: ListeningPageProps) {
 
     // 立即重置相关状态，防止上一个单词的数据残留
     setIsLookingUp(true);
-    setAiExplanation(null);
+    handleCloseAiExplanation();
     setIsAiLoading(false);
 
     // 每个请求分配一个唯一的标识符，用于竞态控制
@@ -348,9 +357,8 @@ function ListeningPage({ username, isAdmin, onLogout }: ListeningPageProps) {
   const handleAiContextLookup = async () => {
     if (!lookupWord || !lookupWord.word) return;
 
-    // Re-open existing analysis in modal without extra request.
+    // 已有结果时不重复请求
     if (aiExplanation && !isAiLoading) {
-      setShowAiModal(true);
       return;
     }
 
@@ -373,13 +381,11 @@ function ListeningPage({ username, isAdmin, onLogout }: ListeningPageProps) {
       if (res.data.status === 'success') {
         const cleaned = sanitizeAiExplanation(res.data.explanation || '');
         setAiExplanation(cleaned);
-        setShowAiModal(true);
       }
     } catch (err) {
       if ((window as any).lastAiRequestId !== currentRequestId) return;
       console.error("AI Context lookup failed", err);
       setAiExplanation("AI Analysis failed. Please try again.");
-      setShowAiModal(true);
     } finally {
       if ((window as any).lastAiRequestId === currentRequestId) {
         setIsAiLoading(false);
@@ -917,10 +923,31 @@ function ListeningPage({ username, isAdmin, onLogout }: ListeningPageProps) {
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar bg-gradient-to-br from-white to-sky-50">
-              {/* AI Explanation Area */}
+            <div
+              ref={dictionaryScrollRef}
+              className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar bg-gradient-to-br from-white to-sky-50"
+            >
+              {/* AI Explanation Card */}
               {aiExplanation && (
-                <div className="hidden"></div>
+                <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4">
+                  <div className="flex items-center justify-between gap-3 border-b border-gray-200 pb-2 mb-3">
+                    <div className="flex items-center gap-2">
+                      <Sparkles size={14} className="text-blue-600" />
+                      <span className="text-xs font-black uppercase tracking-widest text-gray-700">AI语境分析结果</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleCloseAiExplanation}
+                      className="w-7 h-7 rounded-full border border-gray-300 text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-all"
+                      title="关闭"
+                    >
+                      ×
+                    </button>
+                  </div>
+                  <p className="dict-zh text-sm leading-relaxed whitespace-pre-wrap text-gray-800">
+                    {aiExplanation}
+                  </p>
+                </div>
               )}
 
               {isLookingUp ? (
@@ -1010,31 +1037,6 @@ function ListeningPage({ username, isAdmin, onLogout }: ListeningPageProps) {
           </div>
         )}
 
-        {showAiModal && aiExplanation && (
-        <div className="fixed inset-0 z-[120] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-2xl bg-white rounded-2xl border border-gray-200 shadow-2xl overflow-hidden">
-            <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Sparkles size={16} className="text-blue-600" />
-                <h3 className="text-sm font-black tracking-widest text-gray-700 uppercase">AI语境分析结果</h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowAiModal(false)}
-                className="w-8 h-8 rounded-full border border-gray-300 text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-all"
-                title="关闭"
-              >
-                ×
-              </button>
-            </div>
-            <div className="p-6 max-h-[70vh] overflow-y-auto">
-              <p className="dict-zh text-sm leading-relaxed whitespace-pre-wrap text-gray-800">
-                {aiExplanation}
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
       </main>
 
       <style>{`

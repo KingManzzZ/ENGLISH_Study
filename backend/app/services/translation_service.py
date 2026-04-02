@@ -1,11 +1,14 @@
 import os
 import time
 import random
+from datetime import datetime
 from hashlib import md5
 from threading import Lock
 from typing import List, Dict, Tuple
 
 import requests
+
+from ..core.config import BAIDU_API_USAGE_LOG_FILE
 
 FAIL_TRANSLATION_TEXT = "emmm，这句翻译好像出问题了，点击尝试ai协助翻译"
 
@@ -16,6 +19,9 @@ _MIN_REQUEST_INTERVAL_SECONDS = 0.11  # <= 10 req/s
 
 _rate_lock = Lock()
 _last_request_ts = 0.0
+_usage_lock = Lock()
+_current_bucket_start = None
+_current_bucket_chars = 0
 
 
 def _make_md5(s: str, encoding: str = "utf-8") -> str:
@@ -65,6 +71,39 @@ def _chunk_texts(texts: List[str]) -> List[List[str]]:
     return chunks
 
 
+def _bucket_start(ts: float) -> int:
+    return int(ts // 300) * 300
+
+
+def _fmt_ts(ts: int) -> str:
+    return datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _append_usage_line(period_end_ts: int, chars: int) -> None:
+    with open(BAIDU_API_USAGE_LOG_FILE, "a", encoding="utf-8") as f:
+        f.write(f"[{_fmt_ts(period_end_ts)}] {chars}\n")
+
+
+def _record_chars(chars: int) -> None:
+    global _current_bucket_start, _current_bucket_chars
+    if chars <= 0:
+        return
+
+    now = time.time()
+    now_bucket = _bucket_start(now)
+    with _usage_lock:
+        if _current_bucket_start is None:
+            _current_bucket_start = now_bucket
+            _current_bucket_chars = 0
+
+        if now_bucket != _current_bucket_start:
+            _append_usage_line(_current_bucket_start + 300, _current_bucket_chars)
+            _current_bucket_start = now_bucket
+            _current_bucket_chars = 0
+
+        _current_bucket_chars += chars
+
+
 def translate_batch(texts: List[str], from_lang: str = "en", to_lang: str = "zh") -> List[Dict[str, str]]:
     appid, appkey = _get_credentials()
     if not appid or not appkey:
@@ -72,6 +111,9 @@ def translate_batch(texts: List[str], from_lang: str = "en", to_lang: str = "zh"
 
     results: List[Dict[str, str]] = []
     for chunk in _chunk_texts(texts):
+        # Record actual characters sent to Baidu in this request chunk.
+        _record_chars(sum(len(x) for x in chunk))
+
         q = "\n".join(chunk)
         salt = random.randint(32768, 65536)
         sign = _make_md5(appid + q + str(salt) + appkey)
@@ -110,4 +152,3 @@ def translate_batch(texts: List[str], from_lang: str = "en", to_lang: str = "zh"
     if len(results) < len(texts):
         results.extend({"ok": False, "translation": FAIL_TRANSLATION_TEXT} for _ in range(len(texts) - len(results)))
     return results[: len(texts)]
-

@@ -21,6 +21,7 @@ from ..core.config import (
     SECRET_KEY,
     ALGORITHM,
     ADMIN_USERNAME,
+    LOGIN_LOG_FILE,
     verify_password,
     get_password_hash,
     create_access_token,
@@ -116,6 +117,12 @@ async def register(form_data: OAuth2PasswordRequestForm = Depends()):
     return {"message": "User created successfully"}
 
 
+def _append_login_log(username: str) -> None:
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with open(LOGIN_LOG_FILE, "a", encoding="utf-8") as f:
+        f.write(f"[{timestamp}] {username}\n")
+
+
 @router.post("/login")
 async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     users = load_json(USERS_FILE)
@@ -125,6 +132,7 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
 
     is_admin = form_data.username == ADMIN_USERNAME
     access_token = create_access_token(data={"sub": form_data.username, "is_admin": is_admin})
+    _append_login_log(form_data.username)
     return {"access_token": access_token, "token_type": "bearer", "is_admin": is_admin}
 
 

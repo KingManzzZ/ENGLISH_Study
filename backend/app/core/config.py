@@ -23,8 +23,17 @@ USERS_DATA_DIR = "data/users"
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 PROJECT_ROOT = ROOT_DIR
+WORKSPACE_ROOT = os.path.dirname(PROJECT_ROOT)
 MODEL_ROOT = os.path.join(PROJECT_ROOT, "models")
+LOG_DIR = os.path.join(WORKSPACE_ROOT, "logs")
+LOGIN_LOG_FILE = os.path.join(LOG_DIR, "login.log")
+BAIDU_API_USAGE_LOG_FILE = os.path.join(LOG_DIR, "baidu_api_usage.log")
 os.makedirs(MODEL_ROOT, exist_ok=True)
+os.makedirs(LOG_DIR, exist_ok=True)
+for _log_path in (LOGIN_LOG_FILE, BAIDU_API_USAGE_LOG_FILE):
+    if not os.path.exists(_log_path):
+        with open(_log_path, "a", encoding="utf-8"):
+            pass
 
 def hash_password(password: str) -> str:
     salt = hashlib.sha256(os.urandom(60)).hexdigest().encode('ascii')
