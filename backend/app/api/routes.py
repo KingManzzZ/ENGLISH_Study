@@ -10,6 +10,7 @@ import requests
 from fastapi import APIRouter, UploadFile, File, BackgroundTasks, Header, HTTPException, Depends
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from openai import OpenAI
+from openai.types.chat import ChatCompletionSystemMessageParam, ChatCompletionUserMessageParam
 
 from ..core.config import (
     USERS_FILE,
@@ -22,6 +23,7 @@ from ..core.config import (
     ALGORITHM,
     ADMIN_USERNAME,
     LOGIN_LOG_FILE,
+    NEWS_ARTICLES_FILE,
     verify_password,
     get_password_hash,
     create_access_token,
@@ -54,6 +56,12 @@ def _get_qwen_client() -> OpenAI:
     if not api_key:
         raise HTTPException(status_code=500, detail="AI API key not configured")
     return OpenAI(api_key=api_key, base_url="https://dashscope.aliyuncs.com/compatible-mode/v1")
+
+
+def _qwen_messages(system_text: str, user_text: str) -> list[ChatCompletionSystemMessageParam | ChatCompletionUserMessageParam]:
+    system_message: ChatCompletionSystemMessageParam = {"role": "system", "content": system_text}
+    user_message: ChatCompletionUserMessageParam = {"role": "user", "content": user_text}
+    return [system_message, user_message]
 
 
 # Helper functions for data loading
@@ -234,12 +242,9 @@ async def ai_repair_subtitle(file_id: str, data: dict, username: str = Depends(g
         "请将以下英文句子翻译成自然、准确、简洁的中文，只输出译文本身，不要解释：\n"
         f"{text}"
     )
-    completion = client.chat.completions.create(
+    completion = client.chat.completions.create(  # pyright: ignore[reportArgumentType]
         model="qwen-plus",
-        messages=[
-            {"role": "system", "content": "你是专业英汉翻译助手。"},
-            {"role": "user", "content": prompt},
-        ],
+        messages=_qwen_messages("你是专业英汉翻译助手。", prompt),
     )
     translated = (completion.choices[0].message.content or "").strip()
     if not translated:
@@ -382,12 +387,9 @@ async def lookup_word_ai_context(data: dict):
         "任务：结合语境，给出该单词在此处的唯一含义。"
     )
 
-    completion = client.chat.completions.create(
+    completion = client.chat.completions.create(  # pyright: ignore[reportArgumentType]
         model="qwen-plus",
-        messages=[
-            {"role": "system", "content": "你是专业英语老师，擅长语境释义。"},
-            {"role": "user", "content": prompt},
-        ],
+        messages=_qwen_messages("你是专业英汉翻译助手。", prompt),
     )
     return {"status": "success", "explanation": completion.choices[0].message.content}
 
@@ -400,12 +402,9 @@ async def ai_translate_text(data: dict, username: str = Depends(get_current_user
         raise HTTPException(status_code=400, detail="text is required")
 
     client = _get_qwen_client()
-    completion = client.chat.completions.create(
+    completion = client.chat.completions.create(  # pyright: ignore[reportArgumentType]
         model="qwen-plus",
-        messages=[
-            {"role": "system", "content": "你是专业翻译助手，只输出中文译文。"},
-            {"role": "user", "content": f"请将这句英文翻译成中文，仅输出译文：\n{text}"},
-        ],
+        messages=_qwen_messages("你是专业翻译助手，只输出中文译文。", f"请将这句英文翻译成中文，仅输出译文：\n{text}"),
     )
     translated = (completion.choices[0].message.content or "").strip()
     if not translated:
@@ -455,3 +454,35 @@ async def lookup_word(data: dict):
         dict_data[ei]["meanings"][mi]["definitions"][di][field] = translated
 
     return {"status": "success", "data": dict_data}
+
+
+def load_news_articles_payload() -> dict:
+    payload = load_json(NEWS_ARTICLES_FILE, default={})
+    if not isinstance(payload, dict):
+        return {"articles": [], "sections": [], "synced_at": None, "source": "", "language": "en"}
+
+    articles = payload.get("articles")
+    if not isinstance(articles, list):
+        payload["articles"] = []
+    return payload
+
+
+@router.get("/news/articles")
+async def get_news_articles():
+    payload = load_news_articles_payload()
+    return {
+        "synced_at": payload.get("synced_at"),
+        "source": payload.get("source"),
+        "language": payload.get("language", "en"),
+        "sections": payload.get("sections", []),
+        "articles": payload.get("articles", []),
+    }
+
+
+@router.get("/news/articles/{article_id}")
+async def get_news_article_detail(article_id: str):
+    payload = load_news_articles_payload()
+    for article in payload.get("articles", []):
+        if str(article.get("id")) == article_id:
+            return article
+    raise HTTPException(status_code=404, detail="Article not found")

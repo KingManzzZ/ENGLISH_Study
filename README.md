@@ -96,3 +96,23 @@ npm start
 - **后端**: FastAPI (Python), MoviePy.
 - **AI 模型**: OpenAI Whisper (Speech-to-Text).
 - **翻译接口**: 阿里云百炼 - 通义千问 (LLM Translation).
+
+---
+
+## 新闻同步手动抓取
+
+如需手动抓取最新新闻数据：
+
+运行示例：
+
+```bash
+cd backend
+python scripts/fetch_guardian_news.py
+```
+
+说明：
+- 不启用定时自动抓取；每次运行脚本时抓取一次最新数据。
+- 当前固定按 Guardian sections 抓取：`lifeandstyle,sport,travel,food,film,music,technology,culture,education,environment,books,science,business,law`。
+- 不再按初级 / 中级 / 高级划分，前端直接按 `section` 展示与筛选。
+- 脚本会抓取尽可能完整的正文、整理为分段文本，并写入 `backend/data/news_articles.json`。
+- 前端通过后端接口读取该文件内容，展示文章列表与详情。

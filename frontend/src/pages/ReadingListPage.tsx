@@ -1,8 +1,9 @@
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import axios from 'axios';
 import { Link } from 'react-router-dom';
-import { ChevronLeft, BookOpen, LogOut, User, Search } from 'lucide-react';
-import articles from '../data/articles.json';
-import type { Article } from '../types/article';
+import { ChevronLeft, LogOut, Search, User } from 'lucide-react';
+
+import { Article, NewsArticlesResponse, sectionBilingual } from '../types/article';
 
 export interface ReadingListPageProps {
   username: string;
@@ -10,65 +11,74 @@ export interface ReadingListPageProps {
 }
 
 function ReadingListPage({ username, onLogout }: ReadingListPageProps) {
-  const list = articles as Article[];
+  const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+
+  const [articles, setArticles] = useState<Article[]>([]);
+  const [sections, setSections] = useState<string[]>([]);
+  const [selectedSection, setSelectedSection] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedLevel, setSelectedLevel] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  // 获取所有难度等级
-  const levels = useMemo(() => {
-    const uniqueLevels = Array.from(new Set(list.map(a => a.level)));
-    return uniqueLevels.sort();
-  }, [list]);
+  useEffect(() => {
+    const loadArticles = async () => {
+      setLoading(true);
+      setError('');
+      try {
+        const res = await axios.get<NewsArticlesResponse>(`${API_BASE_URL}/news/articles`);
+        const apiArticles = Array.isArray(res.data?.articles) ? res.data.articles : [];
+        setArticles(apiArticles);
 
-  // 筛选和搜索
+        const apiSections = Array.isArray(res.data?.sections) && res.data.sections.length > 0
+          ? res.data.sections
+          : Array.from(new Set(apiArticles.map((item) => item.section).filter(Boolean) as string[]));
+        setSections(apiSections);
+      } catch (err: any) {
+        setError(err?.response?.data?.detail || '文章加载失败，请稍后重试');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadArticles();
+  }, [API_BASE_URL]);
+
   const filteredArticles = useMemo(() => {
-    return list.filter(article => {
-      const matchesSearch = article.title.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesLevel = selectedLevel ? article.level === selectedLevel : true;
-      return matchesSearch && matchesLevel;
+    const keyword = searchQuery.trim().toLowerCase();
+    return articles.filter((article) => {
+      const matchesSection = selectedSection === 'all' ? true : article.section === selectedSection;
+      const matchesSearch = !keyword
+        || article.title.toLowerCase().includes(keyword)
+        || (article.title_zh || '').toLowerCase().includes(keyword)
+        || (article.summary || '').toLowerCase().includes(keyword);
+      return matchesSection && matchesSearch;
     });
-  }, [searchQuery, selectedLevel, list]);
-
-  // 难度等级的颜色映射
-  const levelColorMap: Record<string, { bg: string; text: string; border: string }> = {
-    'Beginner': { bg: 'bg-emerald-100', text: 'text-emerald-700', border: 'border-emerald-300' },
-    'Intermediate': { bg: 'bg-amber-100', text: 'text-amber-700', border: 'border-amber-300' },
-    'Upper intermediate': { bg: 'bg-orange-100', text: 'text-orange-700', border: 'border-orange-300' },
-    'Advanced': { bg: 'bg-red-100', text: 'text-red-700', border: 'border-red-300' },
-  };
-
-  const getLevelColor = (level: string) => {
-    return levelColorMap[level] || { bg: 'bg-gray-100', text: 'text-gray-700', border: 'border-gray-300' };
-  };
+  }, [articles, searchQuery, selectedSection]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-sky-50 via-cyan-50 to-emerald-50">
-      <header className="border-b border-sky-100 bg-white/60 backdrop-blur-md sticky top-0 z-10 shadow-sm">
-        <div className="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3 min-w-0">
-            <Link
-              to="/"
-              className="flex items-center gap-1.5 shrink-0 text-sm font-bold text-gray-600 hover:text-black border border-gray-200 rounded-lg px-3 py-2 transition-all hover:border-black"
-            >
-              <ChevronLeft size={18} />
-              首页
-            </Link>
-            <div className="min-w-0">
-              <h1 className="text-2xl font-black tracking-tight text-black">
-                阅读文章
-              </h1>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mt-1">Reading</p>
-            </div>
+    <div className="min-h-screen bg-gradient-to-br from-sky-50 via-white to-cyan-50 text-gray-900">
+      <header className="sticky top-0 z-20 border-b border-sky-100 bg-white/80 backdrop-blur-md">
+        <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between gap-3">
+          <Link
+            to="/"
+            className="flex items-center gap-1.5 shrink-0 text-sm font-bold text-gray-600 hover:text-black border border-gray-200 rounded-lg px-3 py-2 transition-colors"
+          >
+            <ChevronLeft size={18} />
+            首页
+          </Link>
+          <div className="min-w-0">
+            <h1 className="text-2xl md:text-3xl font-black tracking-tight text-black">读 · 新闻阅读</h1>
+            <p className="text-xs md:text-sm text-gray-500 mt-1">按 section 浏览文章，点进正文精读。</p>
           </div>
           <div className="flex items-center gap-3 shrink-0">
             <span className="hidden sm:inline-flex items-center gap-1.5 text-sm font-semibold text-gray-700">
-              <User size={16} className="text-blue-500" />
+              <User size={16} className="text-sky-600" />
               {username.toUpperCase()}
             </span>
             <button
               type="button"
               onClick={onLogout}
-              className="p-2 rounded-lg hover:bg-red-100 text-gray-500 hover:text-red-600 transition-all"
+              className="p-2 rounded-lg hover:bg-red-100 text-gray-500 hover:text-red-600 transition-colors"
               title="退出登录"
             >
               <LogOut size={20} />
@@ -77,102 +87,88 @@ function ReadingListPage({ username, onLogout }: ReadingListPageProps) {
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-4 py-10">
-        {/* 搜索与筛选区 */}
-        <div className="mb-10 space-y-4">
+      <main className="max-w-6xl mx-auto px-4 py-8">
+        <div className="mb-8 space-y-4">
           <div className="relative">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
             <input
               type="text"
-              placeholder="搜索文章标题..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-12 pr-4 py-3 bg-white border-2 border-gray-200 rounded-2xl focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition-all text-gray-900"
+              placeholder="搜索标题、中文标题或摘要..."
+              className="w-full pl-11 pr-4 py-3 rounded-2xl border border-gray-200 bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-sky-200 focus:border-sky-300 transition-all"
             />
           </div>
 
-          {/* 难度筛选标签 */}
           <div className="flex flex-wrap gap-2">
             <button
-              onClick={() => setSelectedLevel(null)}
-              className={`px-4 py-2 rounded-full font-semibold text-sm transition-all ${
-                selectedLevel === null
-                  ? 'bg-black text-white'
-                  : 'bg-white border-2 border-gray-200 text-gray-700 hover:border-black'
+              type="button"
+              onClick={() => setSelectedSection('all')}
+              className={`px-4 py-2 rounded-full text-sm font-bold border transition-colors ${
+                selectedSection === 'all'
+                  ? 'bg-black text-white border-black'
+                  : 'bg-white text-gray-700 border-gray-200 hover:border-gray-400'
               }`}
             >
               全部
             </button>
-            {levels.map((level) => (
+            {sections.map((section) => (
               <button
-                key={level}
-                onClick={() => setSelectedLevel(level)}
-                className={`px-4 py-2 rounded-full font-semibold text-sm transition-all ${
-                  selectedLevel === level
-                    ? `${getLevelColor(level).bg} ${getLevelColor(level).text} border-2 ${getLevelColor(level).border}`
-                    : 'bg-white border-2 border-gray-200 text-gray-700 hover:border-gray-400'
+                key={section}
+                type="button"
+                onClick={() => setSelectedSection(section)}
+                className={`px-4 py-2 rounded-full text-sm font-bold border transition-colors ${
+                  selectedSection === section
+                    ? 'bg-sky-600 text-white border-sky-600'
+                    : 'bg-white text-gray-700 border-gray-200 hover:border-sky-300'
                 }`}
               >
-                {level}
+                {sectionBilingual(section)}
               </button>
             ))}
           </div>
         </div>
 
-        {/* 文章列表 */}
-        {filteredArticles.length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-            {filteredArticles.map((article) => {
-              const levelColor = getLevelColor(article.level);
-              const wordCount = article.content.split(/\s+/).length;
-              const readTime = Math.ceil(wordCount / 150); // 假设每分钟150词
+        {loading && <div className="text-sm text-gray-500">正在加载文章...</div>}
+        {!loading && error && <div className="text-sm text-red-600">{error}</div>}
 
-              return (
-                <Link
-                  key={article.id}
-                  to={`/read/${article.id}`}
-                  className="group relative overflow-hidden rounded-3xl border-2 border-white bg-white shadow-sm hover:shadow-lg hover:-translate-y-1 transition-all duration-300 p-6"
-                >
-                  {/* 背景装饰 */}
-                  <div className="absolute top-0 right-0 w-32 h-32 bg-sky-100/50 rounded-full -mr-16 -mt-16 group-hover:scale-110 transition-transform duration-300"></div>
-
-                  {/* 内容 */}
-                  <div className="relative z-10">
-                    {/* 难度标签 */}
-                    <div className="mb-3 inline-block">
-                      <span className={`inline-block px-3 py-1 rounded-full text-xs font-bold ${levelColor.bg} ${levelColor.text}`}>
-                        {article.level}
-                      </span>
-                    </div>
-
-                    {/* 标题 */}
-                    <h3 className="text-lg font-black text-gray-900 mb-3 line-clamp-2 group-hover:text-blue-600 transition-colors">
-                      {article.title}
-                    </h3>
-
-                    {/* 元数据 */}
-                    <div className="flex items-center justify-between text-xs text-gray-500 font-semibold">
-                      <div className="flex items-center gap-1">
-                        <BookOpen size={14} />
-                        <span>{wordCount} 词</span>
-                      </div>
-                      <span>{readTime} 分钟阅读</span>
-                    </div>
-
-                    {/* 底部操作提示 */}
-                    <div className="mt-4 pt-3 border-t border-gray-100 text-xs font-semibold text-gray-600 group-hover:text-blue-600 transition-colors">
-                      开始阅读 →
-                    </div>
-                  </div>
-                </Link>
-              );
-            })}
+        {!loading && !error && filteredArticles.length === 0 && (
+          <div className="rounded-2xl border border-dashed border-gray-300 bg-white/80 p-10 text-center text-gray-500">
+            暂时没有匹配的文章。
           </div>
-        ) : (
-          <div className="flex flex-col items-center justify-center py-20">
-            <BookOpen size={48} className="text-gray-300 mb-4" />
-            <p className="text-gray-500 font-semibold">未找到匹配的文章</p>
-            <p className="text-gray-400 text-sm mt-1">尝试调整搜索条件或难度筛选</p>
+        )}
+
+        {!loading && !error && filteredArticles.length > 0 && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            {filteredArticles.map((article) => (
+              <Link
+                key={article.id}
+                to={`/read/${article.id}`}
+                className="group rounded-3xl border border-sky-100 bg-white p-5 shadow-sm hover:shadow-lg hover:border-sky-300 transition-all"
+              >
+                <div className="flex items-center justify-between gap-3 mb-3">
+                  <span className="inline-flex px-2.5 py-1 rounded-full bg-sky-50 text-sky-700 text-[11px] font-bold">
+                    {sectionBilingual(article.section)}
+                  </span>
+                  <span className="text-[11px] text-gray-500">
+                    {article.published_at ? new Date(article.published_at).toLocaleDateString() : ''}
+                  </span>
+                </div>
+
+                <h2 className="text-xl font-black leading-snug text-gray-900 group-hover:text-sky-700 transition-colors">
+                  {article.title}
+                </h2>
+                {article.title_zh && <p className="mt-1 text-sm text-gray-600">{article.title_zh}</p>}
+
+                <p className="mt-3 text-sm leading-7 text-gray-600">
+                  {article.summary || article.content.slice(0, 220)}
+                </p>
+
+                <div className="mt-4 text-xs font-bold text-sky-700 group-hover:text-sky-800 transition-colors">
+                  进入阅读 →
+                </div>
+              </Link>
+            ))}
           </div>
         )}
       </main>

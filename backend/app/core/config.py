@@ -2,7 +2,7 @@ import os
 import jwt
 import hashlib
 import binascii
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -20,6 +20,7 @@ SUBTITLE_DIR = os.getenv("SUBTITLE_DIR", "data/subtitles")
 LIBRARY_DIR = os.getenv("LIBRARY_DIR", "data/library")
 THUMBNAIL_DIR = os.getenv("THUMBNAIL_DIR", "data/thumbnails")
 USERS_DATA_DIR = "data/users"
+NEWS_ARTICLES_FILE = "data/news_articles.json"
 
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 PROJECT_ROOT = ROOT_DIR
@@ -53,7 +54,7 @@ def verify_password(plain_password: str, stored_password: str) -> bool:
 
 def create_access_token(data: dict):
     to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
